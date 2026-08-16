@@ -1,0 +1,16 @@
+services:
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: rag-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - rag_pgdata:/var/lib/postgresql/data
+
+volumes:
+  rag_pgdata:
