@@ -1,0 +1,28 @@
+Scaffold Go project, dependency, Makefile, docker-compose, and env example	https://github.com/pratamaWahyuadi/learn-rag/issues/1
+Implement initial database migration with RLS and sqlc config	https://github.com/pratamaWahyuadi/learn-rag/issues/2
+Implement config, structured logging, error mapping, and HTTP response helpers	https://github.com/pratamaWahyuadi/learn-rag/issues/3
+Define domain models and provider/repository ports	https://github.com/pratamaWahyuadi/learn-rag/issues/4
+Implement flat chunker with unit tests	https://github.com/pratamaWahyuadi/learn-rag/issues/5
+Implement summarizer with map-reduce and anti-injection prompt	https://github.com/pratamaWahyuadi/learn-rag/issues/6
+Implement circuit breaker with unit tests	https://github.com/pratamaWahyuadi/learn-rag/issues/7
+Implement DB pool, tenant transaction helper, and sqlc query definitions	https://github.com/pratamaWahyuadi/learn-rag/issues/8
+Implement repositories for api_keys, upload_intents, jobs, and segments	https://github.com/pratamaWahyuadi/learn-rag/issues/9
+Implement repositories for videos, transcripts, chunks, summaries, audit_logs and RLS negative tests	https://github.com/pratamaWahyuadi/learn-rag/issues/10
+Implement HTTP client helper with retry and backoff	https://github.com/pratamaWahyuadi/learn-rag/issues/11
+Implement R2 storage adapter (presigned URL, download, delete)	https://github.com/pratamaWahyuadi/learn-rag/issues/12
+Implement Groq Whisper transcriber and LlamaParse document parser providers	https://github.com/pratamaWahyuadi/learn-rag/issues/13
+Implement Cloudflare AI BGE-M3 embedder and DeepSeek LLM providers	https://github.com/pratamaWahyuadi/learn-rag/issues/14
+Implement token bucket rate limiter with unit tests	https://github.com/pratamaWahyuadi/learn-rag/issues/15
+Implement API key auth and scope middleware	https://github.com/pratamaWahyuadi/learn-rag/issues/16
+Implement request logging and panic recovery middleware	https://github.com/pratamaWahyuadi/learn-rag/issues/17
+Define API DTOs, router wiring, and health endpoint	https://github.com/pratamaWahyuadi/learn-rag/issues/18
+Implement POST /api/v1/upload-intents handler	https://github.com/pratamaWahyuadi/learn-rag/issues/19
+Implement job endpoints: create, list, detail, retry	https://github.com/pratamaWahyuadi/learn-rag/issues/20
+Implement video endpoints: list, detail, soft delete	https://github.com/pratamaWahyuadi/learn-rag/issues/21
+Implement RAG query service and POST /api/v1/query handler	https://github.com/pratamaWahyuadi/learn-rag/issues/22
+Implement worker pool with pg_notify listener and SKIP LOCKED claim	https://github.com/pratamaWahyuadi/learn-rag/issues/23
+Implement job processor pipeline (download, transcribe/parse, chunk, embed, store, summary)	https://github.com/pratamaWahyuadi/learn-rag/issues/24
+Implement R2 retention cleanup loop	https://github.com/pratamaWahyuadi/learn-rag/issues/25
+Implement database RLS integration tests and HTTP handler security tests	https://github.com/pratamaWahyuadi/learn-rag/issues/26
+Add seed script, Makefile test target, and fake provider fixtures	https://github.com/pratamaWahyuadi/learn-rag/issues/27
+Create deployment artifacts: systemd units, build target, and deploy docs	https://github.com/pratamaWahyuadi/learn-rag/issues/28
