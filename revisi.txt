@@ -1,0 +1,2 @@
+pindah dari child chunk ke flat chunk,setelah dipikir pikir lebih sederhana dan juga lebih akuart.
+edit prd.md sesuai rujukan validator.
