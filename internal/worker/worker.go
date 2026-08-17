@@ -32,9 +32,14 @@ const (
 	// wakeBufferSize bounds the number of pending wake signals buffered in
 	// memory so a notification burst cannot block the listener.
 	wakeBufferSize = 32
-	// shutdownGrace is how long the worker waits for in-flight jobs to finish
-	// after context cancellation before force-stopping.
+	// shutdownGrace is how long the worker lets in-flight jobs finish after the
+	// shutdown context is cancelled before force-cancelling them.
 	shutdownGrace = 30 * time.Second
+	// listenReconnectDelay is the initial delay before re-acquiring the LISTEN
+	// connection after it drops; it backs off up to listenMaxReconnectDelay.
+	listenReconnectDelay = 1 * time.Second
+	// listenMaxReconnectDelay caps the reconnect backoff.
+	listenMaxReconnectDelay = 30 * time.Second
 )
 
 // Config carries the runtime settings and dependencies for the worker.
@@ -136,10 +141,18 @@ func (c Config) validate() error {
 
 // Run starts the LISTEN listener, the polling ticker, the worker pool, and the
 // retention loop, and blocks until ctx is cancelled. When ctx is cancelled it
-// waits up to shutdownGrace for in-flight jobs to finish before returning.
+// stops claiming new jobs but lets in-flight jobs finish on an independent
+// context for up to shutdownGrace before force-cancelling them.
 func (w *Worker) Run(ctx context.Context) error {
 	wake := make(chan struct{}, wakeBufferSize)
 	var wg sync.WaitGroup
+
+	// jobCtx governs a claimed job. It is intentionally independent of the
+	// shutdown ctx so that a SIGTERM does not cancel an in-flight job in the
+	// middle of the pipeline (download/transcribe/embed). In-flight jobs get up
+	// to shutdownGrace to finish, then jobCancel force-cancels them.
+	jobCtx, jobCancel := context.WithCancel(context.Background())
+	defer jobCancel()
 
 	// Retention loop is independent of the job queue.
 	wg.Add(1)
@@ -162,13 +175,14 @@ func (w *Worker) Run(ctx context.Context) error {
 		w.tickerLoop(ctx, wake)
 	}()
 
-	// Worker pool.
+	// Worker pool. Workers claim on ctx (stop as soon as shutdown begins) but
+	// process each job on the independent jobCtx so in-flight work can finish.
 	concurrency := w.concurrency()
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			w.workerLoop(ctx, wake)
+			w.workerLoop(ctx, jobCtx, wake)
 		}()
 	}
 
@@ -176,7 +190,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		"fallback_interval", claimFallbackInterval.String())
 
 	<-ctx.Done()
-	w.log.Info("worker shutting down")
+	w.log.Info("worker shutting down; waiting for in-flight jobs", "grace", shutdownGrace.String())
 
 	wait := make(chan struct{})
 	go func() {
@@ -185,10 +199,13 @@ func (w *Worker) Run(ctx context.Context) error {
 	}()
 	select {
 	case <-wait:
+		return nil
 	case <-time.After(shutdownGrace):
-		w.log.Warn("worker shutdown timed out waiting for jobs")
+		w.log.Warn("worker shutdown grace exceeded; cancelling in-flight jobs")
+		jobCancel()
+		<-wait
+		return nil
 	}
-	return nil
 }
 
 // concurrency returns the configured worker count, clamped to [1, 5].
@@ -203,36 +220,63 @@ func (w *Worker) concurrency() int {
 	return n
 }
 
-// notifyListener subscribes to the job_created channel and wakes workers. The
-// notification payload is used only as a wake signal and is never logged in
-// full.
+// notifyListener subscribes to the job_created channel and wakes workers. If the
+// LISTEN connection drops for any reason other than shutdown, it re-acquires a
+// fresh connection from the pool with a bounded backoff and logs a warning so
+// the silent fallback-to-polling degradation stays visible.
 func (w *Worker) notifyListener(ctx context.Context, wake chan<- struct{}) {
+	backoff := listenReconnectDelay
+	for reconnects := 0; ; {
+		if !w.listenOnce(ctx, wake) {
+			return
+		}
+		reconnects++
+		w.log.Warn("worker: notify listener down; relying on polling fallback",
+			"reconnects", reconnects, "next_retry", backoff.String())
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+		if backoff > listenMaxReconnectDelay {
+			backoff = listenMaxReconnectDelay
+		}
+	}
+}
+
+// listenOnce runs one LISTEN session to completion. It returns false when ctx
+// was cancelled (worker should stop entirely) and true when the connection stood
+// up but later failed (caller should reconnect with a fresh connection).
+func (w *Worker) listenOnce(ctx context.Context, wake chan<- struct{}) bool {
 	conn, err := w.pool.Acquire(ctx)
 	if err != nil {
-		w.log.Error("worker: acquire listen connection", "error", err.Error())
-		return
+		if ctx.Err() != nil {
+			return false
+		}
+		w.log.Error("worker: acquire listen connection failed", "error", err.Error())
+		return true
 	}
 	defer conn.Release()
 
 	if _, err := conn.Exec(ctx, "LISTEN "+notifyChannel); err != nil {
+		if ctx.Err() != nil {
+			return false
+		}
 		w.log.Error("worker: listen failed", "error", err.Error())
-		return
+		return true
 	}
 
+	w.log.Info("worker: notify listener established")
 	pg := conn.Conn()
 	for {
 		n, err := pg.WaitForNotification(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return
+				return false
 			}
-			w.log.Error("worker: wait notification", "error", err.Error())
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-			continue
+			w.log.Error("worker: wait notification failed; reconnecting", "error", err.Error())
+			return true
 		}
 		if n == nil || n.Payload == "" {
 			continue
@@ -260,8 +304,10 @@ func (w *Worker) tickerLoop(ctx context.Context, wake chan<- struct{}) {
 
 // workerLoop claims and processes pending jobs until the queue is empty, then
 // waits for the next wake signal. It never busy-loops: a claim that returns
-// nothing simply stops the drain and blocks.
-func (w *Worker) workerLoop(ctx context.Context, wake <-chan struct{}) {
+// nothing simply stops the drain and blocks. Jobs are claimed using ctx (so new
+// claims stop at shutdown) but run on jobCtx (so an in-flight job survives the
+// shutdown signal and can finish within the grace period).
+func (w *Worker) workerLoop(ctx context.Context, jobCtx context.Context, wake <-chan struct{}) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -280,7 +326,10 @@ func (w *Worker) workerLoop(ctx context.Context, wake <-chan struct{}) {
 				if job == nil || job.ID == "" {
 					break
 				}
-				w.ProcessJob(ctx, job.ID)
+				w.ProcessJob(jobCtx, job.ID)
+				if ctx.Err() != nil {
+					return
+				}
 			}
 		}
 	}
