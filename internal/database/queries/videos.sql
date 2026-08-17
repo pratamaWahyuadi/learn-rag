@@ -107,6 +107,17 @@ RETURNING
     created_at,
     updated_at;
 
+-- name: DeleteVideoByJobID :exec
+DELETE FROM videos
+WHERE job_id = $1
+  AND tenant_id = $2;
+
+-- name: FailVideoByJobID :exec
+UPDATE videos
+SET status = 'failed'
+WHERE job_id = $1
+  AND tenant_id = $2;
+
 -- name: UpdateVideoStatus :one
 UPDATE videos
 SET status = $3

@@ -151,6 +151,30 @@ func (r *VideoRepository) UpdateStatus(ctx context.Context, id, tenantID, status
 	})
 }
 
+// DeleteByJobID removes the video for a job within a tenant-scoped transaction.
+// Deleting the video cascades to its video_segments, chunks, transcripts, and
+// summaries. It is a no-op when no such video exists, keeping reprocessing
+// idempotent.
+func (r *VideoRepository) DeleteByJobID(ctx context.Context, jobID, tenantID string) error {
+	return database.WithTenantTx(ctx, r.pool, tenantID, func(q *queries.Queries) error {
+		return q.DeleteVideoByJobID(ctx, queries.DeleteVideoByJobIDParams{
+			JobID:    jobID,
+			TenantID: tenantID,
+		})
+	})
+}
+
+// FailByJobID sets the status of the video for a job (if any) to failed within
+// a tenant-scoped transaction. It is a no-op when no such video exists.
+func (r *VideoRepository) FailByJobID(ctx context.Context, jobID, tenantID string) error {
+	return database.WithTenantTx(ctx, r.pool, tenantID, func(q *queries.Queries) error {
+		return q.FailVideoByJobID(ctx, queries.FailVideoByJobIDParams{
+			JobID:    jobID,
+			TenantID: tenantID,
+		})
+	})
+}
+
 // withSegments decorates a mapped video with its segment names using the same
 // transaction/RLS context provided by q.
 func (r *VideoRepository) withSegments(ctx context.Context, q *queries.Queries, row queries.Video) (*model.Video, error) {

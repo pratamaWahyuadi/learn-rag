@@ -40,6 +40,13 @@ type JobRepository interface {
 	// ClaimNextPending claims the next pending job across all tenants using
 	// FOR UPDATE SKIP LOCKED. It does not apply tenant RLS.
 	ClaimNextPending(ctx context.Context) (*model.Job, error)
+	// GetByIDAllTenants returns a job by id regardless of tenant, bypassing
+	// tenant RLS. It is used by the worker after claiming a job.
+	GetByIDAllTenants(ctx context.Context, id string) (*model.Job, error)
+	// ListForRetention returns the ids and file keys of jobs that reached a
+	// final state (completed/failed) before olderThan, regardless of tenant. It
+	// bypasses tenant RLS because the retention loop operates globally.
+	ListForRetention(ctx context.Context, olderThan time.Time) ([]model.RetentionJob, error)
 }
 
 // SegmentRepository manages flat segment tags.
@@ -65,6 +72,14 @@ type VideoRepository interface {
 	// missing, owned by another tenant, or already deleted.
 	SoftDelete(ctx context.Context, id, tenantID string) (*time.Time, error)
 	UpdateStatus(ctx context.Context, id, tenantID, status string) error
+	// DeleteByJobID removes the video for a job (and its cascading row-level
+	// dependents) for the tenant. It is a no-op when no such video exists. Used
+	// by the worker to make job reprocessing idempotent.
+	DeleteByJobID(ctx context.Context, jobID, tenantID string) error
+	// FailByJobID sets the status of the video for a job (if any) to failed for
+	// the tenant. It is a no-op when no such video exists. Used by the worker to
+	// mark the video failed when a job fails.
+	FailByJobID(ctx context.Context, jobID, tenantID string) error
 }
 
 // TranscriptRepository persists transcription/parsing results.

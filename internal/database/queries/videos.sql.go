@@ -114,6 +114,39 @@ func (q *Queries) CreateVideo(ctx context.Context, arg CreateVideoParams) (Video
 	return i, err
 }
 
+const deleteVideoByJobID = `-- name: DeleteVideoByJobID :exec
+DELETE FROM videos
+WHERE job_id = $1
+  AND tenant_id = $2
+`
+
+type DeleteVideoByJobIDParams struct {
+	JobID    string `json:"job_id"`
+	TenantID string `json:"tenant_id"`
+}
+
+func (q *Queries) DeleteVideoByJobID(ctx context.Context, arg DeleteVideoByJobIDParams) error {
+	_, err := q.db.Exec(ctx, deleteVideoByJobID, arg.JobID, arg.TenantID)
+	return err
+}
+
+const failVideoByJobID = `-- name: FailVideoByJobID :exec
+UPDATE videos
+SET status = 'failed'
+WHERE job_id = $1
+  AND tenant_id = $2
+`
+
+type FailVideoByJobIDParams struct {
+	JobID    string `json:"job_id"`
+	TenantID string `json:"tenant_id"`
+}
+
+func (q *Queries) FailVideoByJobID(ctx context.Context, arg FailVideoByJobIDParams) error {
+	_, err := q.db.Exec(ctx, failVideoByJobID, arg.JobID, arg.TenantID)
+	return err
+}
+
 const getVideoByID = `-- name: GetVideoByID :one
 SELECT
     id,

@@ -170,6 +170,13 @@ type ChunkSearchResult struct {
 	VideoTitle string `json:"video_title"`
 }
 
+// RetentionJob is a finalized job whose source file is eligible for object
+// storage cleanup. It carries only the fields the retention loop needs.
+type RetentionJob struct {
+	ID      string `json:"id"`
+	FileKey string `json:"file_key"`
+}
+
 // AuditLog records a security-relevant mutation action.
 type AuditLog struct {
 	ID         string         `json:"id"`
