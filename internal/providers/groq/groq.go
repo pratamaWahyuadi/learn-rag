@@ -3,8 +3,9 @@
 package groq
 
 import (
-	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,9 @@ import (
 )
 
 const transcriptionURL = "https://api.groq.com/openai/v1/audio/transcriptions"
+
+// defaultModel is used when the caller does not request a specific model.
+const defaultModel = "whisper-large-v3"
 
 // Config holds the Groq API key.
 type Config struct {
@@ -71,10 +75,18 @@ type transcriptionResponse struct {
 // Transcribe sends the media file to Groq Whisper and returns the transcript.
 func (t *Transcriber) Transcribe(ctx context.Context, input ports.TranscribeInput) (*model.Transcript, error) {
 	return circuitbreaker.Execute(ctx, t.breaker, func() (*model.Transcript, error) {
-		body, contentType, err := buildMultipart(input)
-		if err != nil {
-			return nil, err
+		modelName := defaultModel
+		if input.Model != "" {
+			modelName = input.Model
 		}
+
+		// Build the multipart boundary once so the Content-Type header stays
+		// consistent across retry attempts that each rebuild the body.
+		boundary, err := newBoundary()
+		if err != nil {
+			return nil, fmt.Errorf("groq: generate boundary: %w", err)
+		}
+		contentType := "multipart/form-data; boundary=" + boundary
 
 		headers := http.Header{}
 		headers.Set("Authorization", "Bearer "+t.apiKey)
@@ -84,7 +96,8 @@ func (t *Transcriber) Transcribe(ctx context.Context, input ports.TranscribeInpu
 			endpoint = transcriptionURL
 		}
 
-		resp, err := t.client.Do(ctx, http.MethodPost, endpoint, headers, body, contentType)
+		body := buildMultipart(input.FilePath, input.Language, modelName, boundary)
+		resp, err := t.client.DoStream(ctx, http.MethodPost, endpoint, headers, contentType, body)
 		if err != nil {
 			return nil, fmt.Errorf("groq: transcribe request: %w", err)
 		}
@@ -104,11 +117,6 @@ func (t *Transcriber) Transcribe(ctx context.Context, input ports.TranscribeInpu
 			return nil, fmt.Errorf("groq: empty transcript in response")
 		}
 
-		modelName := "whisper-large-v3"
-		if input.Model != "" {
-			modelName = input.Model
-		}
-
 		language := out.Language
 		if language == nil && input.Language != "" {
 			language = &input.Language
@@ -122,35 +130,54 @@ func (t *Transcriber) Transcribe(ctx context.Context, input ports.TranscribeInpu
 	})
 }
 
-// buildMultipart assembles the Groq multipart form body from the local file.
-func buildMultipart(input ports.TranscribeInput) ([]byte, string, error) {
-	fileData, err := os.ReadFile(input.FilePath)
-	if err != nil {
-		return nil, "", fmt.Errorf("groq: read media file: %w", err)
+// newBoundary returns a random, URL-safe multipart boundary.
+func newBoundary() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
 	}
+	return "----ragGroqBoundary" + hex.EncodeToString(buf), nil
+}
 
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-
-	if err := writer.WriteField("model", "whisper-large-v3"); err != nil {
-		return nil, "", err
-	}
-	if input.Language != "" {
-		if err := writer.WriteField("language", input.Language); err != nil {
-			return nil, "", err
+// buildMultipart returns a function that produces a fresh streaming multipart
+// body for the given file using the provided boundary. Each invocation opens a
+// new file handle and must be closed by the caller (the http client closes the
+// returned ReadCloser after use).
+func buildMultipart(filePath, language, model, boundary string) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("groq: open media file: %w", err)
 		}
-	}
 
-	part, err := writer.CreateFormFile("file", filepath.Base(input.FilePath))
-	if err != nil {
-		return nil, "", err
-	}
-	if _, err := part.Write(fileData); err != nil {
-		return nil, "", err
-	}
-	if err := writer.Close(); err != nil {
-		return nil, "", err
-	}
+		pr, pw := io.Pipe()
+		writer := multipart.NewWriter(pw)
+		// writer.FormDataContentType() generates its own random boundary, so
+		// override it to match the boundary we advertised in the header.
+		_ = writer.SetBoundary(boundary)
 
-	return buf.Bytes(), writer.FormDataContentType(), nil
+		go func() {
+			_ = pw.CloseWithError(func() error {
+				defer file.Close()
+				if err := writer.WriteField("model", model); err != nil {
+					return err
+				}
+				if language != "" {
+					if err := writer.WriteField("language", language); err != nil {
+						return err
+					}
+				}
+				part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+				if err != nil {
+					return err
+				}
+				if _, err := io.Copy(part, file); err != nil {
+					return err
+				}
+				return writer.Close()
+			}())
+		}()
+
+		return pr, nil
+	}
 }

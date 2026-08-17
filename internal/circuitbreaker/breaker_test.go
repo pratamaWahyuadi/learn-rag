@@ -189,12 +189,46 @@ func TestContextCancellationPropagates(t *testing.T) {
 	clock := &fakeClock{t: time.Now()}
 	b := newTestBreaker(Config{MaxFailures: 3, Timeout: time.Second, HalfOpenMaxCalls: 1}, clock)
 
+	// fn blocks until ctx is done; Execute must return ctx.Err() promptly.
 	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		_, err := Execute[int](ctx, b, func() (int, error) {
+			<-ctx.Done() // block, mimicking a long-running provider call
+			return 0, ctx.Err()
+		})
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
+		}
+		close(done)
+	}()
+
+	// Give the goroutine a chance to start fn, then cancel.
+	time.Sleep(10 * time.Millisecond)
 	cancel()
 
-	var someErr = errors.New("ctx cancelled path")
-	_, err := Execute(ctx, b, func() (int, error) { return 0, someErr })
-	if !errors.Is(err, someErr) {
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Execute did not return after context cancellation")
+	}
+
+	// A cancelled call must not count as a provider failure.
+	if got := b.State(); got != StateClosed {
+		t.Fatalf("state after cancelled call = %v, want closed", got)
+	}
+}
+
+func TestSingleFailureDoesNotTripBreaker(t *testing.T) {
+	clock := &fakeClock{t: time.Now()}
+	b := newTestBreaker(Config{MaxFailures: 3, Timeout: time.Second, HalfOpenMaxCalls: 1}, clock)
+
+	// A single failure (with an active context) propagates the error and keeps
+	// the breaker closed.
+	ctx := context.Background()
+	var someErr = errors.New("boom")
+	if _, err := Execute(ctx, b, func() (int, error) { return 0, someErr }); !errors.Is(err, someErr) {
 		t.Fatalf("expected fn error to propagate, got %v", err)
 	}
 	if got := b.State(); got != StateClosed {

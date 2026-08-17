@@ -3,6 +3,7 @@ package httpclient
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -144,5 +145,48 @@ func TestRequestJSONEncoding(t *testing.T) {
 	}
 	if out.Message != "hello" {
 		t.Fatalf("unexpected echo: %s", out.Message)
+	}
+}
+
+func TestDoStreamRetriesReplayBody(t *testing.T) {
+	var calls, bodyProviders int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n < 3 {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	client := New(WithMaxRetries(2))
+	resp, err := client.DoStream(context.Background(), http.MethodGet, ts.URL, nil, "text/plain", func() (io.ReadCloser, error) {
+		atomic.AddInt32(&bodyProviders, 1)
+		return io.NopCloser(strings.NewReader("some-body")), nil
+	})
+	if err != nil {
+		t.Fatalf("DoStream: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 1 initial + 2 retries, and the body provider must be re-invoked per attempt.
+	if atomic.LoadInt32(&calls) != 3 {
+		t.Fatalf("expected 3 requests, got %d", calls)
+	}
+	if atomic.LoadInt32(&bodyProviders) != 3 {
+		t.Fatalf("expected body provider called 3 times, got %d", bodyProviders)
+	}
+}
+
+func TestDoStreamNilBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer ts.Close()
+
+	client := New(WithMaxRetries(2))
+	if _, err := client.DoStream(context.Background(), http.MethodGet, ts.URL, nil, "", func() (io.ReadCloser, error) {
+		return nil, nil
+	}); err == nil {
+		t.Fatal("expected error when body provider returns nil")
 	}
 }
