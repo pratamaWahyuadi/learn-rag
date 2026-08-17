@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -97,19 +98,45 @@ func (r *VideoRepository) List(ctx context.Context, tenantID, segmentName, statu
 	return videos, err
 }
 
-// SoftDelete sets deleted_at=now() for a tenant-owned, non-deleted video. It
-// returns ErrNotFound if no row was updated.
-func (r *VideoRepository) SoftDelete(ctx context.Context, id, tenantID string) error {
-	return database.WithTenantTx(ctx, r.pool, tenantID, func(q *queries.Queries) error {
-		_, err := q.SoftDeleteVideo(ctx, queries.SoftDeleteVideoParams{ID: id, TenantID: tenantID})
+// Count returns the number of non-deleted videos owned by tenantID, optionally
+// filtered by segment name and status, inside a tenant-scoped transaction.
+func (r *VideoRepository) Count(ctx context.Context, tenantID, segmentName, status string) (int, error) {
+	var total int
+	err := database.WithTenantTx(ctx, r.pool, tenantID, func(q *queries.Queries) error {
+		n, err := q.CountVideos(ctx, queries.CountVideosParams{
+			TenantID:    tenantID,
+			Status:      optionalText(status),
+			SegmentName: optionalText(segmentName),
+		})
+		if err != nil {
+			return err
+		}
+		total = int(n)
+		return nil
+	})
+	return total, err
+}
+
+// SoftDelete sets deleted_at=now() for a tenant-owned, non-deleted video and
+// returns the deletion timestamp. It returns ErrNotFound if no row was updated.
+func (r *VideoRepository) SoftDelete(ctx context.Context, id, tenantID string) (*time.Time, error) {
+	var deletedAt *time.Time
+	err := database.WithTenantTx(ctx, r.pool, tenantID, func(q *queries.Queries) error {
+		row, err := q.SoftDeleteVideo(ctx, queries.SoftDeleteVideoParams{ID: id, TenantID: tenantID})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return apierrors.ErrNotFound
 			}
 			return err
 		}
+		t := row.DeletedAt.Time
+		deletedAt = &t
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return deletedAt, nil
 }
 
 // UpdateStatus updates the status of a tenant-owned video.

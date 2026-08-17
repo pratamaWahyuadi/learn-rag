@@ -63,6 +63,25 @@ func (q *Queries) ClaimNextPendingJob(ctx context.Context) (Job, error) {
 	return i, err
 }
 
+const countJobs = `-- name: CountJobs :one
+SELECT count(*)
+FROM jobs
+WHERE tenant_id = $1
+  AND ($2::text IS NULL OR status = $2)
+`
+
+type CountJobsParams struct {
+	TenantID string      `json:"tenant_id"`
+	Status   pgtype.Text `json:"status"`
+}
+
+func (q *Queries) CountJobs(ctx context.Context, arg CountJobsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countJobs, arg.TenantID, arg.Status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (
     id,

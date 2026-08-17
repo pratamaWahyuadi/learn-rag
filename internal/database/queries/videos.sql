@@ -73,6 +73,21 @@ ORDER BY v.created_at DESC
 LIMIT sqlc.arg('limit')
 OFFSET sqlc.arg('offset');
 
+-- name: CountVideos :one
+SELECT count(*)
+FROM videos v
+WHERE v.tenant_id = sqlc.arg('tenant_id')
+  AND v.deleted_at IS NULL
+  AND (sqlc.narg('status')::text IS NULL OR v.status = sqlc.narg('status'))
+  AND (sqlc.narg('segment_name')::text IS NULL OR EXISTS (
+      SELECT 1
+      FROM video_segments vs
+      JOIN segments s ON s.id = vs.segment_id
+      WHERE vs.video_id = v.id
+        AND s.tenant_id = sqlc.arg('tenant_id')
+        AND lower(s.name) = lower(sqlc.narg('segment_name'))
+  ));
+
 -- name: SoftDeleteVideo :one
 UPDATE videos
 SET deleted_at = now()

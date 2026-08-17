@@ -82,6 +82,24 @@ func (r *JobRepository) List(ctx context.Context, tenantID, status string, page,
 	return jobs, err
 }
 
+// Count returns the number of jobs owned by tenantID, optionally filtered by
+// status, inside a tenant-scoped transaction.
+func (r *JobRepository) Count(ctx context.Context, tenantID, status string) (int, error) {
+	var total int
+	err := database.WithTenantTx(ctx, r.pool, tenantID, func(q *queries.Queries) error {
+		n, err := q.CountJobs(ctx, queries.CountJobsParams{
+			TenantID: tenantID,
+			Status:   optionalText(status),
+		})
+		if err != nil {
+			return err
+		}
+		total = int(n)
+		return nil
+	})
+	return total, err
+}
+
 // GetByID returns a job owned by tenantID, or ErrNotFound otherwise.
 func (r *JobRepository) GetByID(ctx context.Context, id, tenantID string) (*model.Job, error) {
 	var result *model.Job
