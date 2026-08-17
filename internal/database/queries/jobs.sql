@@ -183,3 +183,10 @@ RETURNING
     finished_at,
     created_at,
     updated_at;
+
+-- name: ListJobsForRetention :many
+SELECT id, tenant_id, file_key
+FROM jobs
+WHERE status IN ('completed', 'failed')
+  AND finished_at <= $1
+ORDER BY finished_at ASC;

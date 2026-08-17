@@ -332,6 +332,40 @@ func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, erro
 	return items, nil
 }
 
+const listJobsForRetention = `-- name: ListJobsForRetention :many
+SELECT id, tenant_id, file_key
+FROM jobs
+WHERE status IN ('completed', 'failed')
+  AND finished_at <= $1
+ORDER BY finished_at ASC
+`
+
+type ListJobsForRetentionRow struct {
+	ID       string `json:"id"`
+	TenantID string `json:"tenant_id"`
+	FileKey  string `json:"file_key"`
+}
+
+func (q *Queries) ListJobsForRetention(ctx context.Context, finishedAt pgtype.Timestamptz) ([]ListJobsForRetentionRow, error) {
+	rows, err := q.db.Query(ctx, listJobsForRetention, finishedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListJobsForRetentionRow
+	for rows.Next() {
+		var i ListJobsForRetentionRow
+		if err := rows.Scan(&i.ID, &i.TenantID, &i.FileKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const retryJob = `-- name: RetryJob :one
 UPDATE jobs
 SET status = 'pending',

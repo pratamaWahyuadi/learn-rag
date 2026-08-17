@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -164,6 +165,38 @@ func (r *JobRepository) ClaimNextPending(ctx context.Context) (*model.Job, error
 	}
 	job := mapJob(row)
 	return &job, nil
+}
+
+// GetByIDAllTenants returns a job by id regardless of tenant. It bypasses tenant
+// RLS like ClaimNextPending so the worker can reload a job it has claimed. It
+// returns ErrNotFound when no such job exists.
+func (r *JobRepository) GetByIDAllTenants(ctx context.Context, id string) (*model.Job, error) {
+	q := queries.New(r.pool)
+	row, err := q.GetJobByIDAllTenants(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apierrors.ErrNotFound
+		}
+		return nil, err
+	}
+	job := mapJob(row)
+	return &job, nil
+}
+
+// ListForRetention returns the ids and file keys of finalized jobs whose
+// finished_at precedes olderThan, regardless of tenant. It deliberately bypasses
+// tenant RLS because retention cleanup operates globally.
+func (r *JobRepository) ListForRetention(ctx context.Context, olderThan time.Time) ([]model.RetentionJob, error) {
+	q := queries.New(r.pool)
+	rows, err := q.ListJobsForRetention(ctx, fromTime(olderThan))
+	if err != nil {
+		return nil, err
+	}
+	jobs := make([]model.RetentionJob, 0, len(rows))
+	for _, row := range rows {
+		jobs = append(jobs, model.RetentionJob{ID: row.ID, FileKey: row.FileKey})
+	}
+	return jobs, nil
 }
 
 // optionalText returns a NULL pgtype.Text when s is empty, otherwise a valid
