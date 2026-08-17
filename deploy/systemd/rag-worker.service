@@ -1,0 +1,30 @@
+# deploy/systemd/rag-worker.service
+# systemd unit for the rag-worker job pipeline.
+#
+# Install path: /etc/systemd/system/rag-worker.service
+# Env source:   /etc/rag-pipeline/worker.env (see deploy/env.example)
+#
+# Enable/start:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now rag-worker
+[Unit]
+Description=RAG Pipeline worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=rag
+Group=rag
+EnvironmentFile=/etc/rag-pipeline/worker.env
+ExecStart=/usr/local/bin/rag-worker
+Restart=on-failure
+RestartSec=5
+# The worker writes temp files for downloaded/pending materials, so give it a
+# writable TemporaryFileSystem-backed scratch dir and grant it that path.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
