@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func resetEnv(t *testing.T) {
@@ -16,6 +17,8 @@ func resetEnv(t *testing.T) {
 		"EMBEDDING_BATCH_SIZE",
 		"SUMMARY_MAX_TOKENS",
 		"QUERY_RESULT_K",
+		"CB_MAX_FAILURES",
+		"CB_TIMEOUT",
 	} {
 		t.Setenv(k, "")
 	}
@@ -51,6 +54,12 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.QueryResultK != 5 {
 		t.Errorf("QueryResultK = %d, want default 5", cfg.QueryResultK)
 	}
+	if cfg.CbMaxFailures != 3 {
+		t.Errorf("CbMaxFailures = %d, want default 3", cfg.CbMaxFailures)
+	}
+	if cfg.CbTimeout != 30*time.Second {
+		t.Errorf("CbTimeout = %s, want default 30s", cfg.CbTimeout)
+	}
 }
 
 func TestLoadReadsExplicitValues(t *testing.T) {
@@ -63,6 +72,8 @@ func TestLoadReadsExplicitValues(t *testing.T) {
 	t.Setenv("EMBEDDING_BATCH_SIZE", "8")
 	t.Setenv("SUMMARY_MAX_TOKENS", "6000")
 	t.Setenv("QUERY_RESULT_K", "3")
+	t.Setenv("CB_MAX_FAILURES", "5")
+	t.Setenv("CB_TIMEOUT", "45")
 
 	cfg := Load()
 
@@ -86,5 +97,11 @@ func TestLoadReadsExplicitValues(t *testing.T) {
 	}
 	if cfg.QueryResultK != 3 {
 		t.Errorf("QueryResultK = %d, want 3", cfg.QueryResultK)
+	}
+	if cfg.CbMaxFailures != 5 {
+		t.Errorf("CbMaxFailures = %d, want 5", cfg.CbMaxFailures)
+	}
+	if cfg.CbTimeout != 45*time.Second {
+		t.Errorf("CbTimeout = %s, want 45s", cfg.CbTimeout)
 	}
 }

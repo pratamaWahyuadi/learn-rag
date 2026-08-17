@@ -55,6 +55,12 @@ ORDER BY created_at DESC
 LIMIT sqlc.arg('limit')
 OFFSET sqlc.arg('offset');
 
+-- name: CountJobs :one
+SELECT count(*)
+FROM jobs
+WHERE tenant_id = sqlc.arg('tenant_id')
+  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status'));
+
 -- name: GetJobByID :one
 SELECT
     id,
@@ -132,6 +138,7 @@ SET status = 'pending',
     finished_at = NULL
 WHERE id = $1
   AND tenant_id = $2
+  AND status = 'failed'
 RETURNING
     id,
     tenant_id,

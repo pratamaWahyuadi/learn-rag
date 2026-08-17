@@ -11,6 +11,35 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countVideos = `-- name: CountVideos :one
+SELECT count(*)
+FROM videos v
+WHERE v.tenant_id = $1
+  AND v.deleted_at IS NULL
+  AND ($2::text IS NULL OR v.status = $2)
+  AND ($3::text IS NULL OR EXISTS (
+      SELECT 1
+      FROM video_segments vs
+      JOIN segments s ON s.id = vs.segment_id
+      WHERE vs.video_id = v.id
+        AND s.tenant_id = $1
+        AND lower(s.name) = lower($3)
+  ))
+`
+
+type CountVideosParams struct {
+	TenantID    string      `json:"tenant_id"`
+	Status      pgtype.Text `json:"status"`
+	SegmentName pgtype.Text `json:"segment_name"`
+}
+
+func (q *Queries) CountVideos(ctx context.Context, arg CountVideosParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countVideos, arg.TenantID, arg.Status, arg.SegmentName)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createVideo = `-- name: CreateVideo :one
 INSERT INTO videos (
     id,

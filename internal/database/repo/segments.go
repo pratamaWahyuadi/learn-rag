@@ -99,3 +99,18 @@ func (r *SegmentRepository) ListNamesByJobID(ctx context.Context, jobID, tenantI
 	})
 	return names, err
 }
+
+// ListNamesByVideoID returns the segment names attached to a video for the
+// tenant.
+func (r *SegmentRepository) ListNamesByVideoID(ctx context.Context, videoID, tenantID string) ([]string, error) {
+	var names []string
+	err := database.WithTenantTx(ctx, r.pool, tenantID, func(q *queries.Queries) error {
+		var err error
+		names, err = q.ListSegmentNamesByVideoID(ctx, queries.ListSegmentNamesByVideoIDParams{
+			VideoID:  videoID,
+			TenantID: tenantID,
+		})
+		return err
+	})
+	return names, err
+}

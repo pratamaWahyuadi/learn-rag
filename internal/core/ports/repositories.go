@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/pgvector/pgvector-go"
 
@@ -30,6 +31,9 @@ type JobRepository interface {
 	// Create inserts a job along with its job_segments in a single transaction.
 	Create(ctx context.Context, job *model.Job, segmentIDs []string) error
 	List(ctx context.Context, tenantID, status string, page, limit int) ([]model.Job, error)
+	// Count returns the number of jobs owned by tenantID, optionally filtered by
+	// status.
+	Count(ctx context.Context, tenantID, status string) (int, error)
 	GetByID(ctx context.Context, id, tenantID string) (*model.Job, error)
 	UpdateStatus(ctx context.Context, id, tenantID, status, stage string, errorMessage *string) error
 	Retry(ctx context.Context, id, tenantID string) error
@@ -44,6 +48,7 @@ type SegmentRepository interface {
 	AttachJobSegments(ctx context.Context, jobID, tenantID string, segmentIDs []string) error
 	AttachVideoSegments(ctx context.Context, videoID, tenantID string, segmentIDs []string) error
 	ListNamesByJobID(ctx context.Context, jobID, tenantID string) ([]string, error)
+	ListNamesByVideoID(ctx context.Context, videoID, tenantID string) ([]string, error)
 }
 
 // VideoRepository manages course materials.
@@ -52,8 +57,13 @@ type VideoRepository interface {
 	// GetByID returns a non-deleted video owned by the tenant.
 	GetByID(ctx context.Context, id, tenantID string) (*model.Video, error)
 	List(ctx context.Context, tenantID, segmentName, status string, page, limit int) ([]model.Video, error)
-	// SoftDelete sets deleted_at=now() for a tenant-owned, non-deleted video.
-	SoftDelete(ctx context.Context, id, tenantID string) error
+	// Count returns the number of non-deleted videos owned by tenantID,
+	// optionally filtered by segment name and status.
+	Count(ctx context.Context, tenantID, segmentName, status string) (int, error)
+	// SoftDelete sets deleted_at=now() for a tenant-owned, non-deleted video and
+	// returns the deletion timestamp. It returns ErrNotFound when the video is
+	// missing, owned by another tenant, or already deleted.
+	SoftDelete(ctx context.Context, id, tenantID string) (*time.Time, error)
 	UpdateStatus(ctx context.Context, id, tenantID, status string) error
 }
 
