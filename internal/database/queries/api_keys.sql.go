@@ -42,3 +42,14 @@ func (q *Queries) GetAPIKeyByHash(ctx context.Context, keyHash string) (ApiKey, 
 	)
 	return i, err
 }
+
+const touchAPIKeyLastUsed = `-- name: TouchAPIKeyLastUsed :exec
+UPDATE api_keys
+SET last_used_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) TouchAPIKeyLastUsed(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, touchAPIKeyLastUsed, id)
+	return err
+}

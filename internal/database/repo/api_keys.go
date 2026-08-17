@@ -47,3 +47,11 @@ func (r *APIKeyRepository) GetByHash(ctx context.Context, hash string) (*model.A
 		UpdatedAt:  toTime(row.UpdatedAt),
 	}, nil
 }
+
+// TouchLastUsed updates last_used_at for the given API key in the background.
+// api_keys has no RLS and this is a best-effort write, so it runs directly on
+// the pool. Any error is intentionally ignored by callers.
+func (r *APIKeyRepository) TouchLastUsed(ctx context.Context, id string) error {
+	q := queries.New(r.pool)
+	return q.TouchAPIKeyLastUsed(ctx, id)
+}
