@@ -24,10 +24,10 @@ migrate-down:
 sqlc:
 	sqlc generate
 
-# Build both server and worker binaries
+# Build both server and worker binaries (static, CGO disabled)
 build:
-	go build -o bin/rag-server ./cmd/server
-	go build -o bin/rag-worker ./cmd/worker
+	CGO_ENABLED=0 go build -o bin/rag-server ./cmd/server
+	CGO_ENABLED=0 go build -o bin/rag-worker ./cmd/worker
 
 # Run the Go test suite (no external dependencies)
 test:

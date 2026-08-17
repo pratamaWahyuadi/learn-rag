@@ -1,0 +1,29 @@
+# deploy/systemd/rag-api.service
+# systemd unit for the rag-server HTTP API.
+#
+# Install path: /etc/systemd/system/rag-api.service
+# Env source:   /etc/rag-pipeline/api.env (see deploy/env.example)
+#
+# Enable/start:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now rag-api
+[Unit]
+Description=RAG Pipeline API server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=rag
+Group=rag
+EnvironmentFile=/etc/rag-pipeline/api.env
+ExecStart=/usr/local/bin/rag-server
+Restart=on-failure
+RestartSec=5
+# Sandboxing defaults that are safe for a stateless HTTP service.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
