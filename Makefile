@@ -1,4 +1,4 @@
-.PHONY: deps db-up db-down migrate-up migrate-down sqlc build test
+.PHONY: deps db-up db-down migrate-up migrate-down sqlc build test test-integration
 
 # Install / tidy project dependencies
 deps:
@@ -29,6 +29,10 @@ build:
 	go build -o bin/rag-server ./cmd/server
 	go build -o bin/rag-worker ./cmd/worker
 
-# Run the Go test suite
+# Run the Go test suite (no external dependencies)
 test:
 	go test ./...
+
+# Run integration tests that need a reachable Postgres; requires DATABASE_URL
+test-integration:
+	go test -tags integration ./...
