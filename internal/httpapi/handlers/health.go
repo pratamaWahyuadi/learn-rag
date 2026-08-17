@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	apierrors "github.com/pratamaWahyuadi/learn-rag/internal/core/errors"
 	"github.com/pratamaWahyuadi/learn-rag/internal/httpapi/dto"
 )
 
@@ -17,15 +18,8 @@ func (h *Handler) Health(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 	defer cancel()
 
-	dbStatus := "up"
 	if err := h.Pool.Ping(ctx); err != nil {
-		dbStatus = "down"
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": gin.H{
-				"code":    "internal_error",
-				"message": "Terjadi kesalahan internal.",
-			},
-		})
+		writeError(c, apierrors.ErrInternal)
 		return
 	}
 
@@ -33,6 +27,6 @@ func (h *Handler) Health(c *gin.Context) {
 		Status:  "ok",
 		Service: "api",
 		Time:    time.Now().UTC().Format(time.RFC3339),
-		DB:      dbStatus,
+		DB:      "up",
 	})
 }

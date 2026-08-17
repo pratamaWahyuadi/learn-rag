@@ -138,6 +138,7 @@ SET status = 'pending',
     finished_at = NULL
 WHERE id = $1
   AND tenant_id = $2
+  AND status = 'failed'
 RETURNING
     id,
     tenant_id,

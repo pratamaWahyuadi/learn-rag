@@ -46,12 +46,18 @@ func main() {
 		AccountID: cfg.CloudflareAccountID,
 		APIToken:  cfg.CloudflareAPIToken,
 		BatchSize: cfg.EmbeddingBatchSize,
-	}, circuitbreaker.Config{})
+	}, circuitbreaker.Config{
+		MaxFailures: cfg.CbMaxFailures,
+		Timeout:     cfg.CbTimeout,
+	})
 	if err != nil {
 		log.Fatalf("server: init embedder: %v", err)
 	}
 
-	llm, err := deepseek.New(deepseek.Config{APIKey: cfg.DeepSeekAPIKey}, circuitbreaker.Config{})
+	llm, err := deepseek.New(deepseek.Config{APIKey: cfg.DeepSeekAPIKey}, circuitbreaker.Config{
+		MaxFailures: cfg.CbMaxFailures,
+		Timeout:     cfg.CbTimeout,
+	})
 	if err != nil {
 		log.Fatalf("server: init llm: %v", err)
 	}

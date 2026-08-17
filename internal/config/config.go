@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config holds all runtime configuration for the API server and worker,
@@ -35,6 +36,10 @@ type Config struct {
 	EmbeddingBatchSize  int
 	SummaryMaxTokens    int
 	QueryResultK        int
+
+	// External provider circuit breaker
+	CbMaxFailures int
+	CbTimeout     time.Duration
 }
 
 // Load reads configuration from the environment, applies safe defaults, and
@@ -44,7 +49,8 @@ type Config struct {
 // Required: DATABASE_URL.
 // Defaults: SERVER_PORT=8080, WORKER_CONCURRENCY=3, UPLOAD_URL_TTL_MINUTES=10,
 // MAX_UPLOAD_BYTES=2147483648, EMBEDDING_BATCH_SIZE=16,
-// SUMMARY_MAX_TOKENS=12000, QUERY_RESULT_K=5.
+// SUMMARY_MAX_TOKENS=12000, QUERY_RESULT_K=5, CB_MAX_FAILURES=3,
+// CB_TIMEOUT=30 (seconds).
 func Load() *Config {
 	cfg := &Config{
 		DatabaseURL:         required("DATABASE_URL"),
@@ -65,6 +71,8 @@ func Load() *Config {
 		EmbeddingBatchSize:  getenvInt("EMBEDDING_BATCH_SIZE", 16),
 		SummaryMaxTokens:    getenvInt("SUMMARY_MAX_TOKENS", 12000),
 		QueryResultK:        getenvInt("QUERY_RESULT_K", 5),
+		CbMaxFailures:       getenvInt("CB_MAX_FAILURES", 3),
+		CbTimeout:           getenvDuration("CB_TIMEOUT", 30*time.Second),
 	}
 
 	cfg.validate()
@@ -83,6 +91,12 @@ func (c *Config) validate() {
 	}
 	if c.MaxUploadBytes <= 0 {
 		log.Fatalf("config: MAX_UPLOAD_BYTES must be > 0, got %d", c.MaxUploadBytes)
+	}
+	if c.CbMaxFailures <= 0 {
+		log.Fatalf("config: CB_MAX_FAILURES must be > 0, got %d", c.CbMaxFailures)
+	}
+	if c.CbTimeout <= 0 {
+		log.Fatalf("config: CB_TIMEOUT must be > 0, got %s", c.CbTimeout)
 	}
 }
 
@@ -123,4 +137,17 @@ func getenvInt64(key string, def int64) int64 {
 		log.Fatalf("config: %s must be an integer, got %q", key, v)
 	}
 	return n
+}
+
+// getenvDuration reads a duration in seconds, falling back to def in seconds.
+func getenvDuration(key string, def time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		log.Fatalf("config: %s must be an integer (seconds), got %q", key, v)
+	}
+	return time.Duration(n) * time.Second
 }
