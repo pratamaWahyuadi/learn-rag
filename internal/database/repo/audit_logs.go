@@ -12,6 +12,14 @@ import (
 )
 
 // AuditLogRepository implements ports.AuditLogRepository.
+//
+// SECURITY NOTE: the migration deliberately does NOT enable RLS on audit_logs
+// because it is an internal, write-only table. audit_logs is always written from
+// server-internal code and never read via a user-facing endpoint today. Any
+// future list/read endpoint that exposes audit logs to a tenant MUST filter
+// `tenant_id` manually (defense-in-depth like the other tables), or enable RLS
+// on the table, before exposing it. Do not forget this when adding such an
+// endpoint.
 type AuditLogRepository struct {
 	pool *pgxpool.Pool
 }

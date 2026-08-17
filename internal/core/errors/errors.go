@@ -4,6 +4,7 @@
 package errors
 
 import (
+	"errors"
 	"net/http"
 )
 
@@ -47,8 +48,9 @@ var (
 // not an *APIError) map to the generic internal_error code so that internal
 // details never leak to the client.
 func Code(err error) string {
-	if e, ok := err.(*APIError); ok {
-		return e.Code
+	target := &APIError{}
+	if errors.As(err, &target) && target != nil {
+		return target.Code
 	}
 	return ErrInternal.Code
 }
@@ -56,8 +58,9 @@ func Code(err error) string {
 // HTTPStatus returns the HTTP status for err, defaulting to 500 for any
 // non-APIError so a failed handler never exposes internal information.
 func HTTPStatus(err error) int {
-	if e, ok := err.(*APIError); ok {
-		return e.HTTPStatus
+	target := &APIError{}
+	if errors.As(err, &target) && target != nil {
+		return target.HTTPStatus
 	}
 	return ErrInternal.HTTPStatus
 }
@@ -65,8 +68,9 @@ func HTTPStatus(err error) int {
 // Message returns the safe client-facing message for err. Non-APIError values
 // fall back to the generic internal error message.
 func Message(err error) string {
-	if e, ok := err.(*APIError); ok {
-		return e.message
+	target := &APIError{}
+	if errors.As(err, &target) && target != nil {
+		return target.message
 	}
 	return ErrInternal.message
 }

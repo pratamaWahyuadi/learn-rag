@@ -81,6 +81,10 @@ func (b *Breaker) State() State {
 // HalfOpenMaxCalls probe calls are allowed; a success closes the breaker and a
 // failure reopens it. While closed, failures are counted and trip the breaker
 // once MaxFailures is reached.
+//
+// If ctx is cancellable and is done while fn is still running, Execute returns
+// ctx.Err() without recording the call as a provider failure. fn continues to
+// run in the background and its eventual result is ignored.
 func Execute[T any](ctx context.Context, b *Breaker, fn func() (T, error)) (T, error) {
 	var zero T
 
@@ -88,8 +92,38 @@ func Execute[T any](ctx context.Context, b *Breaker, fn func() (T, error)) (T, e
 		return zero, ErrOpen
 	}
 
-	result, err := fn()
+	// Run fn in a goroutine only when the caller provides a cancellable context
+	// so we can abort on cancellation. Otherwise run synchronously to avoid the
+	// goroutine overhead in the common no-cancellation path.
+	if ctx == nil || ctx.Done() == nil {
+		value, err := fn()
+		b.record(err)
+		return value, err
+	}
 
+	type outcome struct {
+		value T
+		err   error
+	}
+	ch := make(chan outcome, 1)
+	go func() {
+		v, err := fn()
+		ch <- outcome{value: v, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return zero, ctx.Err()
+	case res := <-ch:
+		b.record(res.err)
+		return res.value, res.err
+	}
+}
+
+// record updates the breaker state after fn completes: a success resets the
+// failure counters (and closes a half-open breaker), while a failure increments
+// failures or reopens the breaker as appropriate.
+func (b *Breaker) record(err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -100,7 +134,7 @@ func Execute[T any](ctx context.Context, b *Breaker, fn func() (T, error)) (T, e
 		if b.state == StateHalfOpen {
 			b.state = StateClosed
 		}
-		return result, nil
+		return
 	}
 
 	// Failure.
@@ -113,7 +147,6 @@ func Execute[T any](ctx context.Context, b *Breaker, fn func() (T, error)) (T, e
 			b.open()
 		}
 	}
-	return zero, err
 }
 
 // allowAcquire decides whether fn may run, updating state as needed. It returns

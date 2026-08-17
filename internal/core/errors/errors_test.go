@@ -2,6 +2,7 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 )
@@ -57,5 +58,30 @@ func TestErrorsIsWorks(t *testing.T) {
 	var sentinel = ErrNotFound
 	if !errors.Is(sentinel, ErrNotFound) {
 		t.Error("expected errors.Is(sentinel, ErrNotFound) to be true")
+	}
+}
+
+// TestWrappedErrorResolvesCode ensures a wrapped *APIError (via %w) still
+// resolves to the correct code/status. This failed with the old type-assertion
+// implementation, which fell back to 500 for any wrapped error.
+func TestWrappedErrorResolvesCode(t *testing.T) {
+	wrapped := fmt.Errorf("db lookup failed: %w", ErrNotFound)
+
+	if got := Code(wrapped); got != "not_found" {
+		t.Errorf("Code(wrapped) = %q, want not_found", got)
+	}
+	if got := HTTPStatus(wrapped); got != http.StatusNotFound {
+		t.Errorf("HTTPStatus(wrapped) = %d, want 404", got)
+	}
+	if got := Message(wrapped); got != ErrNotFound.Message() {
+		t.Errorf("Message(wrapped) = %q, want %q", got, ErrNotFound.Message())
+	}
+
+	deepWrapped := fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", ErrRateLimited))
+	if got := Code(deepWrapped); got != "rate_limited" {
+		t.Errorf("Code(deepWrapped) = %q, want rate_limited", got)
+	}
+	if got := HTTPStatus(deepWrapped); got != http.StatusTooManyRequests {
+		t.Errorf("HTTPStatus(deepWrapped) = %d, want 429", got)
 	}
 }

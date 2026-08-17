@@ -97,6 +97,80 @@ func (c *HTTPClient) Do(ctx context.Context, method, url string, headers http.He
 	return c.doWithRetry(ctx, method, url, headers, body, contentType)
 }
 
+// DoStream sends an HTTP request whose body is built fresh for each attempt by
+// newBody. This lets callers stream a body built from an unbounded source (such
+// as an open file) without loading it fully into memory, while remaining
+// re-playable across retries. newBody must return a non-nil body on success; a
+// recovered panic or a returned nil/error aborts the attempt.
+func (c *HTTPClient) DoStream(ctx context.Context, method, url string, headers http.Header, contentType string, newBody func() (io.ReadCloser, error)) (*http.Response, error) {
+	return c.doWithRetryReader(ctx, method, url, headers, contentType, newBody)
+}
+
+// doWithRetryReader performs the request, retrying on 429/5xx responses and on
+// transient network errors, with exponential backoff between attempts.
+func (c *HTTPClient) doWithRetryReader(ctx context.Context, method, url string, headers http.Header, contentType string, newBody func() (io.ReadCloser, error)) (*http.Response, error) {
+	attempt := 0
+	wait := c.initialWait
+
+	for {
+		attempt++
+
+		body, err := newBody()
+		if err != nil {
+			return nil, err
+		}
+		if body == nil {
+			return nil, fmt.Errorf("httpclient: body provider returned nil body")
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, url, body)
+		if err != nil {
+			body.Close()
+			return nil, fmt.Errorf("httpclient: build request: %w", err)
+		}
+		for k, vs := range headers {
+			for _, v := range vs {
+				req.Header.Add(k, v)
+			}
+		}
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			// Abort the in-flight body so a streaming writer goroutine unblocks.
+			body.Close()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if attempt <= c.maxRetries {
+				if !c.sleep(ctx, wait) {
+					return nil, ctx.Err()
+				}
+				wait = c.nextWait(wait)
+				continue
+			}
+			return nil, err
+		}
+
+		if retryableStatus(resp.StatusCode) && attempt <= c.maxRetries {
+			// Drain the response so its connection can be reused, then abandon the
+			// request body and retry with a freshly built one.
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			body.Close()
+			if !c.sleep(ctx, wait) {
+				return nil, ctx.Err()
+			}
+			wait = c.nextWait(wait)
+			continue
+		}
+
+		return resp, nil
+	}
+}
+
 // doWithRetry performs the request, retrying on 429/5xx responses and on
 // transient network errors, with exponential backoff between attempts.
 func (c *HTTPClient) doWithRetry(ctx context.Context, method, url string, headers http.Header, body []byte, contentType string) (*http.Response, error) {
