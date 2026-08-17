@@ -1,0 +1,2 @@
+- TokenBucket: butuh eviction (TTL/LRU) sebelum production scale
+- Rate limiter wiring: endpoint ter-auth wajib pakai APIKeyID, bukan IP tapi untuk fase demo pake ip g masalah

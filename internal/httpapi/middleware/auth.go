@@ -20,10 +20,10 @@ type contextKey string
 
 // Context keys stored on the request context by middleware.
 const (
-	ctxTenantID  contextKey = "rent_tenant_id"
-	ctxAPIKeyID  contextKey = "rent_api_key_id"
-	ctxScope     contextKey = "rent_scope"
-	ctxRequestID contextKey = "rent_request_id"
+	ctxTenantID  contextKey = "req_tenant_id"
+	ctxAPIKeyID  contextKey = "req_api_key_id"
+	ctxScope     contextKey = "req_scope"
+	ctxRequestID contextKey = "req_request_id"
 )
 
 // APIKeyStore authenticates API keys and records best-effort usage. The
