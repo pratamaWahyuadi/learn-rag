@@ -3,7 +3,11 @@
 // they can be used safely across handlers, workers, and repositories.
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/pgvector/pgvector-go"
+)
 
 // Shared status enums as string constants.
 const (
@@ -124,6 +128,10 @@ type Chunk struct {
 	ChunkIndex int       `json:"chunk_index"`
 	Content    string    `json:"content"`
 	CreatedAt  time.Time `json:"created_at"`
+
+	// Embedding holds the dense vector used for similarity search. It is
+	// internal-only and never serialized to API responses.
+	Embedding pgvector.Vector `json:"-"`
 }
 
 // Summary is a per-video summary produced by the LLM.
