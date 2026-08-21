@@ -5,7 +5,9 @@ package httpapi
 
 import (
 	"log/slog"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
 	"github.com/pratamaWahyuadi/learn-rag/internal/httpapi/handlers"
@@ -24,6 +26,7 @@ const (
 func NewRouter(logger *slog.Logger, authenticator *middleware.Authenticator, h *handlers.Handler) *gin.Engine {
 	r := gin.New()
 	r.Use(
+		newCORS(),
 		middleware.NewRecovery(logger).Recover(),
 		middleware.NewRequestLogger(logger).Log(),
 	)
@@ -55,6 +58,23 @@ func NewRouter(logger *slog.Logger, authenticator *middleware.Authenticator, h *
 	query.POST("/query", h.Query)
 
 	return r
+}
+
+// newCORS allows the admin dashboard and chat demo origins to call the API
+// from the browser. Must run before any auth/rate-limit middleware so that
+// browser preflight (OPTIONS) requests — which never carry X-API-Key —
+// get a valid CORS response instead of a 401.
+func newCORS() gin.HandlerFunc {
+	return cors.New(cors.Config{
+		AllowOrigins: []string{
+			"https://binery.my.id",
+			"http://localhost:5173", // dev
+		},
+		AllowMethods:  []string{"GET", "POST", "DELETE", "PUT", "OPTIONS"},
+		AllowHeaders:  []string{"Origin", "Content-Type", "Accept", "X-API-Key"},
+		ExposeHeaders: []string{"Content-Length"},
+		MaxAge:        12 * time.Hour,
+	})
 }
 
 // adminKey keys the admin rate limit bucket by the authenticated API key id,
